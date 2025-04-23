@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件去重工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">首页</a></li>
+                <li><a href="{{ url_for('about') }}">关于</a></li>
+            </ul>
+        </nav>
+    </header>
+    
+    <main>
+        <h1>文件去重工具</h1>
+        
+        <div class="scan-section">
+            <form id="scanForm" method="post" action="{{ url_for('duplicate_files.scan') }}">
+                <div class="form-group">
+                    <label for="directory">选择要扫描的目录：</label>
+                    <input type="text" id="directory" name="directory" required>
+                </div>
+                <button type="submit" class="btn">开始扫描</button>
+            </form>
+        </div>
+
+        <div id="progress" class="progress-section" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+            <p class="progress-text">扫描进度：<span id="progressValue">0</span>%</p>
+            <p class="file-count">已扫描文件：<span id="scannedFiles">0</span> / <span id="totalFiles">0</span></p>
+        </div>
+
+        <div id="results" class="results-section" style="display: none;">
+            <h2>扫描结果</h2>
+            <div id="duplicateFiles"></div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for message in messages %}
+                        <div class="flash-message">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+    </main>
+
+    <footer>
+        <p>&copy; 2024 工具箱</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const socket = io();
+            const scanForm = document.getElementById('scanForm');
+            const progressSection = document.getElementById('progress');
+            const resultsSection = document.getElementById('results');
+            const progressFill = document.querySelector('.progress-fill');
+            const progressValue = document.getElementById('progressValue');
+            const scannedFiles = document.getElementById('scannedFiles');
+            const totalFiles = document.getElementById('totalFiles');
+            const duplicateFiles = document.getElementById('duplicateFiles');
+
+            scanForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const directory = document.getElementById('directory').value;
+                
+                // 显示进度条
+                progressSection.style.display = 'block';
+                resultsSection.style.display = 'none';
+                progressFill.style.width = '0%';
+                progressValue.textContent = '0';
+                scannedFiles.textContent = '0';
+                totalFiles.textContent = '0';
+                duplicateFiles.innerHTML = '';
+
+                // 发送扫描请求
+                fetch('{{ url_for("duplicate_files.scan") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'directory=' + encodeURIComponent(directory)
+                });
+            });
+
+            // 监听进度更新
+            socket.on('progress', function(data) {
+                const progress = Math.round(data.progress);
+                progressFill.style.width = progress + '%';
+                progressValue.textContent = progress;
+                scannedFiles.textContent = data.scanned_files;
+                totalFiles.textContent = data.total_files;
+            });
+
+            // 监听扫描完成
+            socket.on('scan_complete', function(data) {
+                progressSection.style.display = 'none';
+                resultsSection.style.display = 'block';
+
+                if (Object.keys(data.duplicates).length === 0) {
+                    duplicateFiles.innerHTML = '<p class="no-duplicates">未发现重复文件</p>';
+                    return;
+                }
+
+                let html = '<div class="duplicate-groups">';
+                Object.entries(data.duplicates).forEach(([hash, files], index) => {
+                    html += `
+                        <div class="duplicate-group">
+                            <h3>重复文件组 ${index + 1}</h3>
+                            <form method="post" action="{{ url_for('duplicate_files.delete_files') }}" class="delete-form">
+                                <div class="file-list">
+                                    ${files.map(file => `
+                                        <div class="file-item">
+                                            <input type="checkbox" name="files[]" value="${file}" id="file_${index}_${files.indexOf(file)}">
+                                            <label for="file_${index}_${files.indexOf(file)}">${file}</label>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <button type="submit" class="btn delete-btn">删除选中文件</button>
+                            </form>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                duplicateFiles.innerHTML = html;
+            });
+        });
+    </script>
+</body>
+</html> 

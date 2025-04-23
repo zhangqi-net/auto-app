@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flask 应用</title>
+    <title>工具箱</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -17,12 +17,21 @@
     </header>
     
     <main>
-        <h1>欢迎来到 Flask 应用</h1>
-        <p>这是一个使用 Flask 框架构建的简单网页应用。</p>
+        <h1>工具箱</h1>
+        
+        <div class="tools-grid">
+            <div class="tool-card">
+                <h2>文件去重工具</h2>
+                <p>扫描并删除重复文件，释放磁盘空间。</p>
+                <a href="{{ url_for('duplicate_files.index') }}" class="btn">使用工具</a>
+            </div>
+            
+            <!-- 后续可以在这里添加更多工具卡片 -->
+        </div>
     </main>
 
     <footer>
-        <p>&copy; 2024 Flask 应用</p>
+        <p>&copy; 2024 工具箱</p>
     </footer>
 </body>
 </html>
