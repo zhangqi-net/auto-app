@@ -1,6 +1,7 @@
 import os
 import hashlib
-from flask import render_template, request, redirect, url_for, flash, jsonify
+from collections import defaultdict
+from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_socketio import emit
 from . import bp
 from .. import socketio
@@ -53,27 +54,59 @@ def index():
 
 @bp.route('/scan', methods=['POST'])
 def scan():
-    directory = request.form.get('directory')
-    if not directory or not os.path.exists(directory):
-        flash('请选择有效的目录！')
-        return redirect(url_for('duplicate_files.index'))
-    
-    # 启动扫描任务
-    socketio.start_background_task(target=lambda: find_duplicate_files(directory))
-    return jsonify({'status': 'scanning'})
+    try:
+        directory = request.form.get('directory')
+        if not directory or not os.path.exists(directory):
+            response = make_response(jsonify({'error': '请选择有效的目录！'}), 400)
+            return response
+        
+        # 启动扫描任务
+        socketio.start_background_task(target=lambda: find_duplicate_files(directory))
+        response = make_response(jsonify({'status': 'scanning'}), 200)
+        return response
+    except Exception as e:
+        response = make_response(jsonify({'error': str(e)}), 500)
+        return response
 
 @bp.route('/delete', methods=['POST'])
 def delete_files():
-    selected_files = request.form.getlist('files[]')
-    if not selected_files:
-        flash('请选择要删除的文件！')
-        return redirect(url_for('duplicate_files.index'))
-    
-    for file_path in selected_files:
-        try:
-            os.remove(file_path)
-            flash(f"已删除文件：{file_path}")
-        except Exception as e:
-            flash(f"删除文件失败：{file_path} - {str(e)}")
-    
-    return redirect(url_for('duplicate_files.index')) 
+    try:
+        selected_files = request.form.getlist('files[]')
+        if not selected_files:
+            return jsonify({
+                'success': False,
+                'error': '请选择要删除的文件！'
+            }), 400
+        
+        deleted_files = []
+        failed_files = []
+        
+        for file_path in selected_files:
+            try:
+                os.remove(file_path)
+                deleted_files.append(file_path)
+            except Exception as e:
+                failed_files.append({
+                    'path': file_path,
+                    'error': str(e)
+                })
+        
+        if failed_files:
+            return jsonify({
+                'success': True,
+                'message': f'成功删除 {len(deleted_files)} 个文件，{len(failed_files)} 个文件删除失败',
+                'deleted_files': deleted_files,
+                'failed_files': failed_files
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'成功删除 {len(deleted_files)} 个文件',
+                'deleted_files': deleted_files
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500 

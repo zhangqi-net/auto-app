@@ -43,15 +43,7 @@
             <div id="duplicateFiles"></div>
         </div>
 
-        {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                <div class="flash-messages">
-                    {% for message in messages %}
-                        <div class="flash-message">{{ message }}</div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
+        <div id="flash-messages" class="flash-messages" style="display: none;"></div>
     </main>
 
     <footer>
@@ -60,7 +52,10 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const socket = io();
+            const socket = io({
+                transports: ['websocket'],
+                upgrade: false
+            });
             const scanForm = document.getElementById('scanForm');
             const progressSection = document.getElementById('progress');
             const resultsSection = document.getElementById('results');
@@ -69,6 +64,23 @@
             const scannedFiles = document.getElementById('scannedFiles');
             const totalFiles = document.getElementById('totalFiles');
             const duplicateFiles = document.getElementById('duplicateFiles');
+            const flashMessages = document.getElementById('flash-messages');
+
+            function showFlashMessage(message, type = 'info') {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `flash-message ${type}`;
+                messageDiv.textContent = message;
+                flashMessages.appendChild(messageDiv);
+                flashMessages.style.display = 'block';
+                
+                // 3秒后自动消失
+                setTimeout(() => {
+                    messageDiv.remove();
+                    if (flashMessages.children.length === 0) {
+                        flashMessages.style.display = 'none';
+                    }
+                }, 3000);
+            }
 
             scanForm.addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -115,25 +127,72 @@
                 let html = '<div class="duplicate-groups">';
                 Object.entries(data.duplicates).forEach(([hash, files], index) => {
                     html += `
-                        <div class="duplicate-group">
+                        <div class="duplicate-group" id="group_${index}">
                             <h3>重复文件组 ${index + 1}</h3>
-                            <form method="post" action="{{ url_for('duplicate_files.delete_files') }}" class="delete-form">
-                                <div class="file-list">
-                                    ${files.map(file => `
-                                        <div class="file-item">
-                                            <input type="checkbox" name="files[]" value="${file}" id="file_${index}_${files.indexOf(file)}">
-                                            <label for="file_${index}_${files.indexOf(file)}">${file}</label>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                                <button type="submit" class="btn delete-btn">删除选中文件</button>
-                            </form>
+                            <div class="file-list">
+                                ${files.map(file => `
+                                    <div class="file-item">
+                                        <input type="checkbox" name="files[]" value="${file}" id="file_${index}_${files.indexOf(file)}">
+                                        <label for="file_${index}_${files.indexOf(file)}">${file}</label>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <button type="button" class="btn delete-btn" onclick="deleteFiles(${index})">删除选中文件</button>
                         </div>
                     `;
                 });
                 html += '</div>';
                 duplicateFiles.innerHTML = html;
             });
+
+            // 删除文件函数
+            window.deleteFiles = function(groupIndex) {
+                const group = document.getElementById(`group_${groupIndex}`);
+                const selectedFiles = group.querySelectorAll('input[name="files[]"]:checked');
+                
+                if (selectedFiles.length === 0) {
+                    showFlashMessage('请选择要删除的文件！', 'error');
+                    return;
+                }
+
+                if (!confirm('确定要删除选中的文件吗？此操作不可撤销！')) {
+                    return;
+                }
+
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('files[]', file.value);
+                });
+
+                fetch('{{ url_for("duplicate_files.delete_files") }}', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 从界面中移除已删除的文件
+                        selectedFiles.forEach(file => {
+                            const fileItem = file.closest('.file-item');
+                            fileItem.remove();
+                        });
+                        
+                        // 如果组内没有文件了，移除整个组
+                        const remainingFiles = group.querySelectorAll('.file-item');
+                        if (remainingFiles.length === 0) {
+                            group.remove();
+                        }
+                        
+                        showFlashMessage('文件删除成功！', 'success');
+                    } else {
+                        showFlashMessage(data.error || '删除失败！', 'error');
+                    }
+                })
+                .catch(error => {
+                    showFlashMessage('删除过程中出错！', 'error');
+                    console.error('Error:', error);
+                });
+            };
         });
     </script>
 </body>
